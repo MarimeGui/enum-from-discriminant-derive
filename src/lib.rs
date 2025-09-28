@@ -27,7 +27,7 @@ macro_rules! impl_try_from {
     };
 }
 
-/// Implements ``TryFrom<T>`` on an enum to turn numeric unsigned values into an enum variant based on discriminant value.
+/// Implements ``TryFrom<T>`` on an enum to turn numeric signed and unsigned values into an enum variant based on discriminant value.
 ///
 /// Depending on the value of the biggest discriminant, ``TryFrom<u8>``, ``TryFrom<u16>``,
 /// ``TryFrom<u32>``, ``TryFrom<u64>``, ``TryFrom<usize>``, ``TryFrom<i8>``, ``TryFrom<i16>``,
