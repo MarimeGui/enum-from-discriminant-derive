@@ -1,16 +1,61 @@
+use std::cmp::max;
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Expr, Lit, parse_macro_input};
 
-// TODO: Macro or fn for all quotes
-// TODO: Make biggest_discriminant better
-// TODO: Example code
-// TODO: Test against enums with properties
+macro_rules! impl_try_from {
+    ($number:ty, $name:ident, $biggest:ident, $variants:ident, $implementations:ident) => {
+        if $biggest <= (<$number>::MAX as u64) {
+            let variants = $variants.clone();
+            $implementations.push(
+                quote! {
+                    impl TryFrom<$number> for #$name {
+                        type Error = ();
+
+                        fn try_from(value: $number) -> Result<Self, Self::Error> {
+                            Ok(match value {
+                                #(i if i == Self::#variants as $number => Self::#variants,)*
+                                _ => return Err(())
+                            })
+                        }
+                    }
+                }
+                .into(),
+            )
+        }
+    };
+}
 
 /// Implements ``TryFrom<T>`` on an enum to turn numeric unsigned values into an enum variant based on discriminant value.
 ///
 /// Depending on the value of the biggest discriminant, ``TryFrom<u8>``, ``TryFrom<u16>``,
-/// ``TryFrom<u32>``, ``TryFrom<u64>`` and ``TryFrom<usize>`` will be implemented.
+/// ``TryFrom<u32>``, ``TryFrom<u64>``, ``TryFrom<usize>``, ``TryFrom<i8>``, ``TryFrom<i16>``,
+/// ``TryFrom<i32>``, ``TryFrom<i64>`` and ``TryFrom<isize>`` will be implemented.
+///
+/// Example:
+/// ```rs
+/// use enum_from_discriminant_derive::TryFromDiscriminant;
+///
+/// #[derive(TryFromDiscriminant)]
+/// enum MyCoolEnum {
+///     // Discriminant is implied to be 0 for FirstVariant...
+///     FirstVariant,
+///     // ... 1 for SecondVariant...
+///     SecondVariant,
+///     // ... and 16381 for ThirdVariant explicitly.
+///     ThirdVariant = 16381
+/// }
+/// // As the biggest discriminant (16381) does not fit in a u8, `TryFrom<u8>` and `TryFrom<i8>` will NOT be implemented.
+/// // However, all others will be.
+///
+/// fn is_second(value: u16) -> bool {
+///     match MyCoolEnum::try_from(value).expect("not a valid discriminant") {
+///         MyCoolEnum::SecondVariant => true,
+///         _ => false,
+///     }
+/// }
+/// ```
 #[proc_macro_derive(TryFromDiscriminant)]
 pub fn enum_from_discriminant(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -21,28 +66,44 @@ pub fn enum_from_discriminant(input: TokenStream) -> TokenStream {
         data
     } else {
         return TokenStream::from(
-            syn::Error::new(name.span(), "only enums can derive `TryFromU8`").to_compile_error(),
+            syn::Error::new(
+                name.span(),
+                "only enums can derive `TryFrom<_>` from discriminants",
+            )
+            .to_compile_error(),
         );
     };
 
     // Find biggest discriminant
+    // In Rust, if the discriminant is not explicit, it will always be he previous discriminant plus 1, with the first variant being 0.
+    let mut current_discriminant = None;
     let mut biggest_discriminant = None;
     for variant in &enum_data.variants {
         if let Some((_, discriminant_expr)) = &variant.discriminant {
+            // We have an explicit value for the discriminant
             if let Expr::Lit(expr) = discriminant_expr {
                 if let Lit::Int(i) = &expr.lit {
                     let value = i.base10_parse::<u64>().unwrap();
-                    biggest_discriminant = Some(value)
+                    current_discriminant = Some(value)
                 } else {
                     panic!()
                 }
             } else {
                 panic!()
             }
-        } else if let Some(biggest) = biggest_discriminant {
-            biggest_discriminant = Some(biggest + 1)
+        } else if let Some(current) = current_discriminant {
+            // Not the first variant and the discriminant is implicit
+            current_discriminant = Some(current + 1)
         } else {
-            biggest_discriminant = Some(0)
+            // This is the first variant and the value isn't explicit
+            current_discriminant = Some(0)
+        }
+
+        let current = current_discriminant.unwrap();
+        if let Some(biggest) = biggest_discriminant {
+            biggest_discriminant = Some(max(biggest, current))
+        } else {
+            biggest_discriminant = Some(current)
         }
     }
     let biggest_discriminant = if let Some(b) = biggest_discriminant {
@@ -57,98 +118,17 @@ pub fn enum_from_discriminant(input: TokenStream) -> TokenStream {
     let mut implementations: Vec<TokenStream> = Vec::with_capacity(enum_data.variants.len());
     let variants = enum_data.variants.into_iter().map(|v| v.ident);
 
-    if biggest_discriminant <= (u8::MAX as u64) {
-        let variants = variants.clone();
-        implementations.push(
-            quote! {
-                impl TryFrom<u8> for #name {
-                    type Error = ();
+    impl_try_from!(u8, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(u16, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(u32, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(usize, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(u64, name, biggest_discriminant, variants, implementations);
 
-                    fn try_from(value: u8) -> Result<Self, Self::Error> {
-                        Ok(match value {
-                            #(i if i == Self::#variants as u8 => Self::#variants,)*
-                            _ => return Err(())
-                        })
-                    }
-                }
-            }
-            .into(),
-        )
-    }
-
-    if biggest_discriminant <= (u16::MAX as u64) {
-        let variants = variants.clone();
-        implementations.push(
-            quote! {
-                impl TryFrom<u16> for #name {
-                    type Error = ();
-
-                    fn try_from(value: u16) -> Result<Self, Self::Error> {
-                        Ok(match value {
-                            #(i if i == Self::#variants as u16 => Self::#variants,)*
-                            _ => return Err(())
-                        })
-                    }
-                }
-            }
-            .into(),
-        )
-    }
-
-    if biggest_discriminant <= (u32::MAX as u64) {
-        let variants = variants.clone();
-        implementations.push(
-            quote! {
-                impl TryFrom<u32> for #name {
-                    type Error = ();
-
-                    fn try_from(value: u32) -> Result<Self, Self::Error> {
-                        Ok(match value {
-                            #(i if i == Self::#variants as u32 => Self::#variants,)*
-                            _ => return Err(())
-                        })
-                    }
-                }
-            }
-            .into(),
-        )
-    }
-
-    if biggest_discriminant <= (usize::MAX as u64) {
-        let variants = variants.clone();
-        implementations.push(
-            quote! {
-                impl TryFrom<usize> for #name {
-                    type Error = ();
-
-                    fn try_from(value: usize) -> Result<Self, Self::Error> {
-                        Ok(match value {
-                            #(i if i == Self::#variants as usize => Self::#variants,)*
-                            _ => return Err(())
-                        })
-                    }
-                }
-            }
-            .into(),
-        )
-    }
-
-    // Pretty sure discriminants can't get any bigger than a u64
-    implementations.push(
-        quote! {
-            impl TryFrom<u64> for #name {
-                type Error = ();
-
-                fn try_from(value: u64) -> Result<Self, Self::Error> {
-                    Ok(match value {
-                        #(i if i == Self::#variants as u64 => Self::#variants,)*
-                        _ => return Err(())
-                    })
-                }
-            }
-        }
-        .into(),
-    );
+    impl_try_from!(i8, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(i16, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(i32, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(isize, name, biggest_discriminant, variants, implementations);
+    impl_try_from!(i64, name, biggest_discriminant, variants, implementations);
 
     TokenStream::from_iter(implementations)
 }
