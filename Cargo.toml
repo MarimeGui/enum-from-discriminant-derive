@@ -6,6 +6,7 @@ authors = ["MarimeGui <lepro.guillaume@gmail.com>"]
 keywords = ["derive", "tryfrom"]
 categories = ["rust-patterns"]
 readme = "README.md"
+license = "Unlicense"
 version = "1.0.0"
 edition = "2024"
 
