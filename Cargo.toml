@@ -1,6 +1,12 @@
 [package]
 name = "enum-from-discriminant-derive"
-version = "0.1.0"
+description = "Macro to implement TryFrom<Integers> for enum discriminants"
+repository = "https://github.com/MarimeGui/enum-from-discriminant-derive"
+authors = ["MarimeGui <lepro.guillaume@gmail.com>"]
+keywords = ["derive", "tryfrom"]
+categories = ["rust-patterns"]
+readme = "README.md"
+version = "1.0.0"
 edition = "2024"
 
 [lib]
